@@ -1,6 +1,6 @@
-# hello_world
+# Niuniu Mobile Client
 
-A new Flutter project.
+A Flutter project for homework tracking.
 
 ## Getting Started
 
