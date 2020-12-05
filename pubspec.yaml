@@ -1,4 +1,4 @@
-name: hello_world
+name: niuniu
 description: A new Flutter project.
 
 # The following line prevents the package from being accidentally published to
@@ -23,9 +23,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  http: ^0.12.0+2
   date_format: ^1.0.9
-  dio: 3.0.10
   time_range_picker: ^1.1.0
+  sprintf: ^4.0.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -34,6 +35,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_driver:
+    sdk: flutter
+  test: any
 
 # For information on the generic Dart partflu of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

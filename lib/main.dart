@@ -1,15 +1,27 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:date_format/date_format.dart';
+import 'package:niuniu/pvt/study/entity/homework.dart';
+import 'package:niuniu/pvt/study/service/homework_service.dart';
+import 'package:niuniu/pvt/study/service/subject_service.dart';
 import 'package:time_range_picker/time_range_picker.dart';
 
-import 'action.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(NiuniuApp());
+}
+class Choice {
+  const Choice({ this.title, this.icon });
+  final String title;
+  final IconData icon;
 }
 
-class MyApp extends StatelessWidget {
+const List<Choice> choices = const <Choice>[
+  const Choice(title: 'Homework', icon: Icons.book),
+];
+
+
+class NiuniuApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
@@ -19,78 +31,79 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.pink,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: MyHomePage(title: 'NiuNiu'),
+      home: DefaultTabController(
+        length: choices.length,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text("NiuNiu"),
+            bottom: TabBar(
+              isScrollable: true,
+              tabs: choices.map((Choice choice) {
+                return Tab(
+                  text: choice.title,
+                  icon: Icon(choice.icon),
+                );
+              }).toList(),
+            ),
+          ),
+          body: TabBarView(
+            children: choices.map((Choice choice) => ChoiceCard(choice: choice))
+                .toList(),
+          ),
+        ),
+      ),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  MyHomePage({Key key, this.title}) : super(key: key);
-
-  final String title;
+class ChoiceCard extends StatefulWidget {
+  const ChoiceCard({ Key key, this.choice }) : super(key: key);
+  final Choice choice;
 
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  State<ChoiceCard> createState() {
+    if (choice.title == "Homework") {
+      return _HomeworkCardState();
+    }
+    return null;
+  }
 }
 
-class _MyHomePageState extends State<MyHomePage>
-    with SingleTickerProviderStateMixin {
-  final List<Tab> myTabs = <Tab>[
-    Tab(text: 'Homework'),
-    // Tab(text: 'Exercise'),
-    // Tab(text: 'Reward'),
-  ];
-  bool _offstage = true;
+class _HomeworkCardState extends State<ChoiceCard> {
+
   DateTime _selectedDate = DateTime.now();
-  Subject _subjectStub = Subject();
-  Homework _homeworkStub = Homework();
-  Map<int, dynamic> _homeworkCompleted = {};
+  HomeworkService _homeworkService = HomeworkService();
+  SubjectService _subjectService = SubjectService();
+  Future<List> _subjects;
+  Map<int, String> _homeworkTimeRange = {}; // for display
+  Map<int, int> _homeworkIds = {};
 
-  void _loadHomework() async {
-    List<dynamic> subjects;
-    if (_subjectStub.subjectsCache == null) {
-      subjects = await _subjectStub.subjects;
-      _subjectStub.cache(subjects);
-    } else {
-      subjects = _subjectStub.subjectsCache;
-    }
-    var completeTimes = {};
-    subjects.forEach((s) {
-      completeTimes[s['id']] = "完成时间";
-    });
-
-    var resp = await _homeworkStub.loadHomeworks(_selectedDate);
-    resp.data.forEach((element) {
-      int sid = element['subject']['id'];
-      if (element['completeTime'] != null) {
-        var ct = DateTime.parse(element['completeTime']);
-        completeTimes[sid] = formatDate(ct, [hh, ":", nn, " ", am]);
-      }
-    });
-    Future.delayed(
-        Duration.zero,
-        () => setState(() {
-              completeTimes.forEach((key, value) {
-                _homeworkCompleted[key] = value;
-              });
-              _offstage = true;
-            }));
+  void _loadSubjects() {
+    _subjects = _subjectService.subjects;
   }
 
-  @override
-  void initState() {
-    super.initState();
-    Future.delayed(
-        Duration.zero,
-        () => setState(() {
-              _loadHomework();
-            }));
+  void _loadHomework(DateTime publishDate) async {
+    var workTime = {};
+    (await _subjects).forEach((s) {
+      workTime[s.id] = "时间";
+    });
+    _homeworkIds.clear();
+    var resp = await _homeworkService.loadHomework(publishDate);
+    resp.forEach((sid, h) {
+      if (h.completeTime != null) {
+        workTime[sid] = _homeworkService.formatTimeRange(h);
+      }
+      _homeworkIds[sid] = h.id;
+    });
+    setState(() {
+      workTime.forEach((key, value) {
+        _homeworkTimeRange[key] = value;
+      });
+    });
   }
 
   void _showDatePicker() {
-    //获取异步方法里面的值的第一种方式：then
     showDatePicker(
-      //如下四个参数为必填参数
       context: context,
       initialDate: _selectedDate, //选中的日期
       firstDate: DateTime(2020), //日期选择器上可选择的最早日期
@@ -99,24 +112,13 @@ class _MyHomePageState extends State<MyHomePage>
       if (result != null) {
         setState(() {
           this._selectedDate = result;
-          _loadHomework();
-          _offstage = true;
         });
+        _loadHomework(_selectedDate);
       }
     });
   }
 
   void _showTimePicker(int subjectId) async {
-    // var result =
-    //     await showTimePicker(context: context, initialTime: TimeOfDay.now());
-    // if (result != null) {
-    //   var resp = _homeworkStub.saveOnTimePicker(subjectId, result);
-    //   resp.then((value) {
-    //     setState(() {
-    //       _homeworkCompleted[subjectId] = result.format(context);
-    //     });
-    //   });
-    // }
     TimeRange result = await showTimeRangePicker(
       context: context,
       hideButtons: true,
@@ -124,134 +126,114 @@ class _MyHomePageState extends State<MyHomePage>
       ticks: 12,
       strokeWidth: 10,
       labels: [
-        ClockLabel.fromTime(time: TimeOfDay(hour: 15, minute: 0), text: "回家"),
         ClockLabel.fromTime(time: TimeOfDay(hour: 21, minute: 0), text: "睡觉")
       ],
       labelOffset: 40,
       start: TimeOfDay(hour: 15, minute: 0),
       end: TimeOfDay(hour: 21, minute: 0),
-      disabledTime: TimeRange(
-          startTime: TimeOfDay(hour: 23, minute: 0),
-          endTime: TimeOfDay(hour: 14, minute: 0)),
-      disabledColor: Colors.red.withOpacity(0.5),
     );
     if (result != null) {
-      var resp = await _homeworkStub.saveOnTimePicker(subjectId, result);
-      if (resp.statusCode == 200) {
-        setState(() {
-          _homeworkCompleted[subjectId] = result.endTime.format(context);
-        });
-      }
+      var homework = _homeworkService.create(publishDate: _selectedDate,
+          subjectId: subjectId, workTimeRange: result);
+      int homeworkId = await _homeworkService.saveOnTimePicker(homework);
+      setState(() {
+        _homeworkIds[subjectId] = homeworkId;
+        _homeworkTimeRange[subjectId] =
+            _homeworkService.formatTimeRange(homework);
+      });
     }
   }
 
   @override
+  void initState() {
+    _loadSubjects();
+    _loadHomework(_selectedDate);
+    super.initState();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: myTabs.length,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.title),
-          bottom: TabBar(
-            tabs: myTabs,
-            isScrollable: true,
-            indicatorSize: TabBarIndicatorSize.tab,
-            labelColor: Colors.white,
-            labelStyle: TextStyle(fontSize: 16.0),
-            unselectedLabelColor: Colors.black,
-            unselectedLabelStyle: TextStyle(fontSize: 12.0),
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            Tab(
-              child: Column(
+    return
+      Column(
+        children: <Widget>[
+          Container(
+            padding: EdgeInsets.fromLTRB(16, 32, 16, 32),
+            decoration: BoxDecoration(
+                image: DecorationImage(
+                  image: AssetImage("images/homework.png"),
+                  fit: BoxFit.fitHeight,
+                  alignment: Alignment.centerRight,
+                )),
+            child: InkWell(
+              key: Key("publishDateInkWell"),
+              onTap: _showDatePicker,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.start,
                 children: <Widget>[
-                  Offstage(
-                    offstage: _offstage,
-                    child: LinearProgressIndicator(),
+                  Text(
+                    "作业日:   ${formatDate(_selectedDate, [
+                      yyyy,
+                      "-",
+                      mm,
+                      "-",
+                      dd
+                    ])}",
+                    textAlign: TextAlign.left,
+                    key: Key("publishDateText"),
                   ),
-                  Container(
-                    padding: EdgeInsets.fromLTRB(16, 32, 16, 32),
-                    decoration: BoxDecoration(
-                        image: DecorationImage(
-                      image: AssetImage("images/homework.png"),
-                      fit: BoxFit.fitHeight,
-                      alignment: Alignment.centerRight,
-                    )),
-                    child: InkWell(
-                      onTap: _showDatePicker,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                              "作业日:   ${formatDate(_selectedDate, [
-                                yyyy,
-                                "-",
-                                mm,
-                                "-",
-                                dd
-                              ])}",
-                              textAlign: TextAlign.left),
-                          Icon(Icons.calendar_today)
-                        ],
-                      ),
-                    ),
-                  ),
-                  Container(
-                    width: MediaQuery.of(context).size.width,
-                    child: FutureBuilder<List>(
-                      future: _subjectStub.subjects,
-                      builder: (BuildContext context,
-                          AsyncSnapshot<List> _subjects) {
-                        if (_subjects.hasData) {
-                          int subjectSize = _subjects.data.length;
-                          _offstage = true;
-                          return ListView.builder(
-                            shrinkWrap: true,
-                            itemCount: subjectSize,
-                            itemBuilder: (context, index) {
-                              String s = _subjects.data[index]['subject'];
-                              int id = _subjects.data[index]['id'];
-                              return ListTile(
-                                title: Text("$s"),
-                                subtitle: Row(
-                                  children: <Widget>[
-                                    Text("${this._homeworkCompleted[id]}"),
-                                  ],
-                                ),
-                                trailing: Icon(Icons.access_time),
-                                onTap: () {
-                                  _showTimePicker(id);
-                                },
-                                onLongPress: () {
-                                  setState(() {
-                                    _homeworkCompleted[id] = "完成时间";
-                                    _homeworkStub.clearCompleteTime(id);
-                                  });
-                                },
-                              );
-                            },
-                          );
-                        } else {
-                          _offstage = false;
-                          return Text("加载中...");
-                        }
-                      },
-                    ),
-                  ),
+                  Icon(Icons.calendar_today)
                 ],
               ),
             ),
-            // Tab(
-            //   child: Text('开发中...'),
-            // ),
-            // Tab(
-            //   child: Text('开发中...'),
-            // ),
-          ],
-        ),
-      ),
-    );
+          ),
+          Container(
+            width: MediaQuery
+                .of(context)
+                .size
+                .width,
+            child: FutureBuilder<List>(
+              future: _subjects,
+              builder: (BuildContext context,
+                  AsyncSnapshot<List> _subjects) {
+                if (_subjects.hasData) {
+                  int subjectSize = _subjects.data.length;
+
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: subjectSize,
+                    itemBuilder: (context, index) {
+                      String s = _subjects.data[index].subject;
+                      int id = _subjects.data[index].id;
+                      return ListTile(
+                        key: Key("homework_subject_$index"),
+                        title: Text("$s"),
+                        subtitle: Row(
+                          children: <Widget>[
+                            Text("${this._homeworkTimeRange[id]}"),
+                          ],
+                        ),
+                        trailing: Icon(Icons.access_time),
+                        onTap: () {
+                          _showTimePicker(id);
+                        },
+                        onLongPress: () {
+                          setState(() {
+                            _homeworkTimeRange[id] = "时间";
+                            _homeworkService.clearTime(id);
+                          });
+                        },
+                      );
+                    },
+                  );
+                } else {
+                  return Text("加载中...");
+                }
+              },
+            ),
+          ),
+        ],
+      );
   }
 }
+
+
