@@ -1,8 +1,10 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import 'package:niuniu/pvt/study/config/app_config.dart';
+
 class NetworkUtil {
-  static String _baseUrl = "http://192.168.1.30:4567/api";
+  static String _baseUrl = AppConfig.base_url;
 
   static String _parseUrl([Map data]) {
     String query = "";
@@ -27,11 +29,8 @@ class NetworkUtil {
 
   static Future<http.Response> post(String path, dynamic data) async {
     var body = utf8.encode(json.encode(data));
-    var addPost = await http.post(
-        _baseUrl + path,
-        headers: {"content-type" : "application/json"},
-        body: body
-    );
+    var addPost = await http.post(_baseUrl + path,
+        headers: {"content-type": "application/json"}, body: body);
 
     return addPost;
   }
@@ -51,10 +50,13 @@ class NetworkUtil {
   static dynamic jsonNvl(Map json, String key, [Function convert]) {
     var data;
     if (convert != null) {
-      data = json.containsKey(key) && json[key] != null ? convert(json[key]) : null;
+      data = json.containsKey(key) && json[key] != null
+          ? convert(json[key])
+          : null;
     } else {
       data = json.containsKey(key) && json[key] != null ? json[key] : null;
     }
     return data;
   }
+
 }

@@ -1,6 +1,5 @@
 import 'package:flutter_driver/flutter_driver.dart';
 import 'package:test/test.dart';
-import 'package:date_format/date_format.dart';
 
 void main() {
   group('Niuniu App', () {

@@ -1,0 +1,8 @@
+environment_config:
+  path: pvt/study/config/app_config.dart
+  class: AppConfig
+  const: true
+
+  fields:
+    base_url:
+      default: "http://172.16.13.132:4567/api"
