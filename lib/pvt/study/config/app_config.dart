@@ -1,5 +1,5 @@
 class AppConfig {
   const AppConfig();
 
-  static const String base_url = 'http://192.168.1.30:4567/api';
+  static const String base_url = 'http://47.99.189.70/api';
 }
