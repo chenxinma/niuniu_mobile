@@ -1,66 +1,61 @@
 import 'package:date_format/date_format.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:niuniu/pvt/study/entity/homework.dart';
 import 'package:niuniu/pvt/study/screen/navigation_bar_builder.dart';
 import 'package:niuniu/pvt/study/service/homework_service.dart';
 import 'package:niuniu/pvt/study/service/subject_service.dart';
 import 'package:time_range_picker/time_range_picker.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 class HomeworkPage extends StatefulWidget {
   @override
   HomeworkState createState() => HomeworkState();
 }
 
-class HomeworkState extends State<HomeworkPage> {
-  DateTime _selectedDate = DateTime.now();
+class HomeworkState extends State<HomeworkPage> with TickerProviderStateMixin {
+  DateTime _selectedDate;
+  Map<DateTime, List> _homeworkList = {};
+  List<Homework> _selectedHomework = [];
   HomeworkService _homeworkService = HomeworkService();
   SubjectService _subjectService = SubjectService();
   Future<List> _subjects;
-  Map<int, String> _homeworkTimeRange = {}; // for display
-  Map<int, int> _homeworkIds = {};
+  CalendarController _calendarController;
+  AnimationController _animationController;
+  bool doDelete = true;
+
+  final GlobalKey<ScaffoldState> _scaffoldKey = new GlobalKey<ScaffoldState>();
+
+  @override
+  void initState() {
+    _loadSubjects();
+    _selectedDate =
+        DateTime.parse(formatDate(DateTime.now(), [yyyy, "-", mm, "-", dd]))
+            .toLocal();
+    _calendarController = CalendarController();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _selectedDate =
+        DateTime.parse(formatDate(DateTime.now(), [yyyy, "-", mm, "-", dd]))
+            .toLocal();
+
+    _animationController.forward();
+    super.initState();
+  }
 
   void _loadSubjects() {
     _subjects = _subjectService.subjects;
   }
 
-  void _loadHomework(DateTime publishDate) async {
-    var workTime = {};
-    (await _subjects).forEach((s) {
-      workTime[s.id] = "时间";
-    });
-    _homeworkIds.clear();
-    var resp = await _homeworkService.loadHomework(publishDate);
-    resp.forEach((sid, h) {
-      if (h.completeTime != null) {
-        workTime[sid] = _homeworkService.formatTimeRange(h);
-      }
-      _homeworkIds[sid] = h.id;
-    });
-    setState(() {
-      workTime.forEach((key, value) {
-        _homeworkTimeRange[key] = value;
-      });
-    });
-  }
-
-  void _showDatePicker() {
-    showDatePicker(
-      context: context,
-      initialDate: _selectedDate, //选中的日期
-      firstDate: DateTime(2020), //日期选择器上可选择的最早日期
-      lastDate: DateTime(2030), //日期选择器上可选择的最晚日期
-    ).then((result) {
-      if (result != null) {
-        setState(() {
-          this._selectedDate = result;
-        });
-        _loadHomework(_selectedDate);
-      }
-    });
-  }
-
-  void _showTimePicker(int subjectId) async {
-    var _begin = TimeOfDay.now();
-    var _end = TimeOfDay.fromDateTime(DateTime.now().add(Duration(hours: 1)));
+  void _showTimePicker(Homework homework) async {
+    var _begin = homework.beginTime != null
+        ? TimeOfDay.fromDateTime(homework.beginTime)
+        : TimeOfDay.fromDateTime(DateTime.now());
+    var _end = homework.completeTime != null
+        ? TimeOfDay.fromDateTime(homework.completeTime)
+        : TimeOfDay.fromDateTime(DateTime.now().add(Duration(minutes: 30)));
     TimeRange result = await showTimeRangePicker(
       context: context,
       hideButtons: true,
@@ -75,113 +70,262 @@ class HomeworkState extends State<HomeworkPage> {
       end: _end,
     );
     if (result != null) {
-      var homework = _homeworkService.create(
+      var _homework = _homeworkService.create(
+          homeworkId: homework.id,
           publishDate: _selectedDate,
-          subjectId: subjectId,
+          subjectId: homework.subject.id,
           workTimeRange: result);
-      int homeworkId = await _homeworkService.saveOnTimePicker(homework);
-      setState(() {
-        _homeworkIds[subjectId] = homeworkId;
-        _homeworkTimeRange[subjectId] =
-            _homeworkService.formatTimeRange(homework);
-      });
+      await _homeworkService.saveOnTimePicker(_homework);
+      await _flushSelectedDate();
     }
-  }
-
-  @override
-  void initState() {
-    _loadSubjects();
-    _loadHomework(_selectedDate);
-    super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       appBar: AppBar(
         title: Text("Homework"),
       ),
       bottomNavigationBar:
           NavigationBarBuilder.create(context, NavigationBarBuilder.screens[0]),
-      body: _buildContent(),
+      body: _buildContent(context),
     );
   }
 
-  Widget _buildContent() {
+  void _popHomeworkDelte(BuildContext context, int id) {
+    doDelete = true;
+    _scaffoldKey.currentState.showSnackBar(
+      SnackBar(
+        content: Text('删除'),
+        action: SnackBarAction(
+          label: '撤销',
+          onPressed: () {
+            doDelete = false;
+          },
+        ),
+      ),
+    );
+    Future.delayed(Duration(seconds: 1, microseconds: 500), () {
+      if (doDelete) {
+        var resp = _homeworkService.delete(id);
+        resp.then((value) {
+          _flushSelectedDate();
+        });
+      }
+      _scaffoldKey.currentState.removeCurrentSnackBar();
+    });
+  }
+
+  Future _flushSelectedDate() async {
+    var homeworkList = await _homeworkService.loadHomework(_selectedDate);
+    setState(() {
+      _homeworkList[_selectedDate] = homeworkList;
+      _selectedHomework = homeworkList;
+      _calendarController.setSelectedDay(_selectedDate);
+    });
+    return homeworkList;
+  }
+
+  Widget _buildContent(BuildContext context) {
     return Column(
       children: <Widget>[
+        _buildTableCalendar(),
+        const SizedBox(height: 8.0),
         Container(
-          padding: EdgeInsets.fromLTRB(16, 32, 16, 32),
-          decoration: BoxDecoration(
-              image: DecorationImage(
-            image: AssetImage("images/homework.png"),
-            fit: BoxFit.fitHeight,
-            alignment: Alignment.centerRight,
-          )),
-          child: InkWell(
-            key: Key("publishDateInkWell"),
-            onTap: _showDatePicker,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  "作业日:   ${formatDate(_selectedDate, [
-                    yyyy,
-                    "-",
-                    mm,
-                    "-",
-                    dd
-                  ])}",
-                  textAlign: TextAlign.left,
-                  key: Key("publishDateText"),
-                ),
-                Icon(Icons.calendar_today)
-              ],
-            ),
+          padding: EdgeInsets.fromLTRB(16,8,0,8),
+          color: Colors.grey[200],
+          child: Row(
+            children: <Widget>[
+              Text("${formatDate(_selectedDate, [yyyy, "-", mm, "-", dd])}")
+            ],
           ),
         ),
-        Container(
-          width: MediaQuery.of(context).size.width,
-          child: FutureBuilder<List>(
-            future: _subjects,
-            builder: (BuildContext context, AsyncSnapshot<List> _subjects) {
-              if (_subjects.hasData) {
-                int subjectSize = _subjects.data.length;
-
-                return ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: subjectSize,
-                  itemBuilder: (context, index) {
-                    String s = _subjects.data[index].subject;
-                    int id = _subjects.data[index].id;
-                    return ListTile(
-                      key: Key("homework_subject_$index"),
-                      title: Text("$s"),
-                      subtitle: Row(
-                        children: <Widget>[
-                          Text("${this._homeworkTimeRange[id]}"),
-                        ],
-                      ),
-                      trailing: Icon(Icons.access_time),
-                      onTap: () {
-                        _showTimePicker(id);
-                      },
-                      onLongPress: () {
-                        setState(() {
-                          _homeworkTimeRange[id] = "时间";
-                          _homeworkService.clearTime(id);
-                        });
-                      },
-                    );
-                  },
-                );
-              } else {
-                return Text("加载中...");
-              }
-            },
-          ),
+        Expanded(
+          child: _buildHomeworkList(context),
         ),
       ],
+    );
+  }
+
+  Widget _buildHomeworkList(BuildContext context) {
+    return FutureBuilder<List>(
+      future: _subjects,
+      builder: (BuildContext context, AsyncSnapshot<List> snapshot) {
+        if (snapshot.hasData) {
+          List<Homework> homeworkListItmes = _homeworkService.fill(
+              _selectedHomework, snapshot.data, _selectedDate);
+          return ListView(
+            children: homeworkListItmes
+                .map(
+                  (h) => h.id != null
+                      ? Slidable(
+                          actionExtentRatio: 0.25,
+                          actionPane: SlidableScrollActionPane(),
+                          child: Container(
+                            color: Colors.white,
+                            child: ListTile(
+                              title: Text("${h.subject.subject}"),
+                              subtitle: Text('${h.timeLable}'),
+                              trailing: Icon(Icons.time_to_leave),
+                              onTap: () {
+                                _showTimePicker(h);
+                              },
+                              onLongPress:  () => _popHomeworkDelte(context, h.id),
+                            ),
+                          ),
+                          secondaryActions: <Widget>[
+                            IconSlideAction(
+                              caption: '删除',
+                              color: Colors.red[300],
+                              icon: Icons.delete,
+                              onTap: () => _popHomeworkDelte(context, h.id),
+                            ),
+                          ],
+                        )
+                      : Container(
+                          color: Colors.white,
+                          child: ListTile(
+                            title: Text("${h.subject.subject}"),
+                            subtitle: Text('${h.timeLable}'),
+                            trailing: Icon(Icons.time_to_leave),
+                            onTap: () {
+                              _showTimePicker(h);
+                            },
+                          ),
+                        ),
+                )
+                .toList(),
+          );
+        } else {
+          return Text("加载中...");
+        }
+      },
+    );
+  }
+
+  void _onDaySelected(DateTime day, List events, List holidays) {
+    setState(() {
+      _selectedDate =
+          DateTime.parse(formatDate(day, [yyyy, "-", mm, "-", dd])).toLocal();
+      _selectedHomework = events.map((e) => e as Homework).toList();
+    });
+  }
+
+  void _onCalendarCreated(
+      DateTime first, DateTime last, CalendarFormat format) {
+    var homeworkList = _homeworkService.loadHomework2(first, last);
+    homeworkList.then((e) {
+      setState(() {
+        e.forEach((k, v) {
+          _homeworkList[k] = v;
+        });
+        if (_homeworkList.containsKey(_selectedDate)) {
+          _homeworkList[_selectedDate].forEach((element) {
+            _selectedHomework.add(element);
+          });
+        }
+      });
+    });
+  }
+
+  void _onVisibleDaysChanged(
+      DateTime first, DateTime last, CalendarFormat format) {
+    var homeworkList = _homeworkService.loadHomework2(first, last);
+    homeworkList.then((e) {
+      setState(() {
+        e.forEach((k, v) {
+          _homeworkList[k] = v;
+        });
+      });
+    });
+  }
+
+  Widget _buildTableCalendar() {
+    return TableCalendar(
+      locale: 'zh_CN',
+      availableCalendarFormats: const {
+        CalendarFormat.month: 'Compact',
+        CalendarFormat.week: 'All',
+      },
+      initialCalendarFormat: CalendarFormat.week,
+      calendarController: _calendarController,
+      events: _homeworkList,
+      builders: CalendarBuilders(
+        selectedDayBuilder: (context, date, _) {
+          return FadeTransition(
+            opacity: Tween(begin: 0.0, end: 1.0).animate(_animationController),
+            child: Container(
+              margin: const EdgeInsets.all(4.0),
+              padding: const EdgeInsets.only(top: 5.0, left: 6.0),
+              color: Colors.pink,
+              width: 100,
+              height: 100,
+              child: Text(
+                '${date.day}',
+                style:
+                    TextStyle().copyWith(fontSize: 16.0, color: Colors.white),
+              ),
+            ),
+          );
+        },
+        todayDayBuilder: (context, date, _) {
+          return Container(
+            margin: const EdgeInsets.all(4.0),
+            padding: const EdgeInsets.only(top: 5.0, left: 6.0),
+            color: Colors.pink[200],
+            width: 100,
+            height: 100,
+            child: Text(
+              '${date.day}',
+              style: TextStyle().copyWith(fontSize: 16.0),
+            ),
+          );
+        },
+        markersBuilder: (context, date, events, holidays) {
+          final children = <Widget>[];
+
+          if (events.isNotEmpty) {
+            children.add(
+              Positioned(
+                right: 1,
+                bottom: 1,
+                child: _buildEventsMarker(date, events),
+              ),
+            );
+          }
+
+          return children;
+        },
+      ),
+      onDaySelected: _onDaySelected,
+      onVisibleDaysChanged: _onVisibleDaysChanged,
+      onCalendarCreated: _onCalendarCreated,
+    );
+  }
+
+  Widget _buildEventsMarker(DateTime date, List events) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      decoration: BoxDecoration(
+        shape: BoxShape.rectangle,
+        color: _calendarController.isSelected(date)
+            ? Colors.brown[500]
+            : _calendarController.isToday(date)
+                ? Colors.brown[300]
+                : Colors.blue[400],
+      ),
+      width: 16.0,
+      height: 16.0,
+      child: Center(
+        child: Text(
+          '${events.length}',
+          style: TextStyle().copyWith(
+            color: Colors.white,
+            fontSize: 12.0,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -8,13 +8,29 @@ import 'package:sprintf/sprintf.dart';
 import 'package:time_range_picker/src/utils.dart';
 
 class HomeworkService {
-  Future<Map<int, Homework>> loadHomework(DateTime publishDate) async {
-    Map<int, Homework> homeworkList = Map();
-    List<dynamic> homeworkJson = await NetworkUtil.getJson("/homework", {"publishDate":
-        formatDate(publishDate, [yyyy, "-", mm, "-", dd])});
+  Future<List<Homework>> loadHomework(DateTime publishDate) async {
+    List<dynamic> homeworkJson = await NetworkUtil.getJson("/homework", {
+      "publishDate": formatDate(publishDate, [yyyy, "-", mm, "-", dd])
+    });
+
+    return homeworkJson.map((e) => Homework.fromJson(e)).toList();
+  }
+
+  Future<Map<DateTime, List<Homework>>> loadHomework2(
+      DateTime begin, DateTime end) async {
+    List<dynamic> homeworkJson = await NetworkUtil.getJson("/homework_fetch", {
+      "begin": formatDate(begin, [yyyy, "-", mm, "-", dd]),
+      "end": formatDate(end, [yyyy, "-", mm, "-", dd]),
+    });
+
+    Map<DateTime, List<Homework>> homeworkList = Map();
 
     homeworkJson.map((e) => Homework.fromJson(e)).forEach((homework) {
-      homeworkList[homework.subject.id] = homework;
+      DateTime dt = homework.publishDate;
+      if (!homeworkList.containsKey(dt)) {
+        homeworkList[dt] = List();
+      }
+      homeworkList[dt].add(homework);
     });
 
     return homeworkList;
@@ -29,23 +45,45 @@ class HomeworkService {
     await NetworkUtil.delete("/homework/$id/time_range");
   }
 
-  String formatTimeRange(Homework homework) {
-    return sprintf("%s - %s", [
-      formatDate(homework.beginTime, [hh, ":", nn, " ", am]),
-      formatDate(homework.completeTime, [hh, ":", nn, " ", am])
-    ]);
-  }
-
-  Homework create({DateTime publishDate, int subjectId, TimeRange workTimeRange, int homeworkId}) {
+  Homework create(
+      {DateTime publishDate,
+      int subjectId,
+      TimeRange workTimeRange,
+      int homeworkId}) {
     Homework h = Homework(
       publishDate: publishDate,
       subject: Subject(id: subjectId),
       beginTime: DateTime(publishDate.year, publishDate.month, publishDate.day,
           workTimeRange.startTime.hour, workTimeRange.startTime.minute),
       completeTime: DateTime(
-          publishDate.year, publishDate.month, publishDate.day,
-          workTimeRange.endTime.hour, workTimeRange.endTime.minute),
+          publishDate.year,
+          publishDate.month,
+          publishDate.day,
+          workTimeRange.endTime.hour,
+          workTimeRange.endTime.minute),
+      id: homeworkId,
     );
     return h;
+  }
+
+  Future<int> delete(int id) async {
+    http.Response resp =
+        await NetworkUtil.delete(sprintf("/homework/%d", [id]));
+    return int.parse(resp.body);
+  }
+
+  List<Homework> fill(
+      List<Homework> selectedHomework, List subjects, DateTime selectedDate) {
+    List<Homework> results = [];
+    results.addAll(selectedHomework);
+    subjects.forEach((e) {
+      Subject subject = e as Subject;
+      int idx = selectedHomework.indexWhere((e) => e.subject.id == subject.id);
+      if (idx < 0) {
+        results.add(Homework(subject: subject, publishDate: selectedDate));
+      }
+    });
+
+    return results;
   }
 }
