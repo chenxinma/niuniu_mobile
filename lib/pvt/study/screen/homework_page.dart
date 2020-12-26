@@ -167,7 +167,7 @@ class HomeworkState extends State<HomeworkPage> with TickerProviderStateMixin {
                             child: ListTile(
                               title: Text("${h.subject.subject}"),
                               subtitle: Text('${h.timeLable}'),
-                              trailing: Icon(Icons.time_to_leave),
+                              trailing: Icon(Icons.access_time),
                               onTap: () {
                                 _showTimePicker(h);
                               },
@@ -188,7 +188,7 @@ class HomeworkState extends State<HomeworkPage> with TickerProviderStateMixin {
                           child: ListTile(
                             title: Text("${h.subject.subject}"),
                             subtitle: Text('${h.timeLable}'),
-                            trailing: Icon(Icons.time_to_leave),
+                            trailing: Icon(Icons.access_time),
                             onTap: () {
                               _showTimePicker(h);
                             },
